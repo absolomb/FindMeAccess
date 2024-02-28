@@ -144,7 +144,7 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
         
         # Microsoft MFA 
         elif "AADSTS50079" in response.text or "AADSTS50076" in response.text:
-            message_string = colored("Microsoft MFA Required","yellow", attrs=['bold'])
+            message_string = colored("Microsoft MFA Required or blocked by conditional access","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string}")
         
         # Conditional Access 
@@ -169,6 +169,11 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
         elif "AADSTS65002" in response.text:
             message_string = colored("Client_id not authorized for resource","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
+
+        # Suspicious activity
+        elif "AADSTS53004" in response.text:
+            message_string = colored("Suspicious activity","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
         
         # Empty password
         elif "AADSTS900144" in response.text:
@@ -188,7 +193,9 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
 
         # default unknown
         else:
-            raise ValueError(colored(f"[!] Unknown error encountered","red", attrs=['bold']))
+            response_data = json.loads(response)
+            error_description = response_data.get('error_description')
+            raise ValueError(colored(f"[!] Unknown error encountered: {error_description}","red", attrs=['bold']))
 
         return
 
