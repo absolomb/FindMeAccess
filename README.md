@@ -41,9 +41,9 @@ You can choose to pass the password via command line with `-p` or just provide t
 python findmeaccess.py -u username@domain.com
 ```
 
-For safety reasons, the tool will initially perform a test authentication and if successful, will continue. Otherwise the tool will exit. This help prevents unintended lockouts via incorrect passwords, as well as just keeping the tool efficient and trying incorrect usernames, tenants, etc.
+For safety reasons, the tool will initially perform a test authentication and if successful, will continue. Otherwise the tool will exit. This helps prevent unintended lockouts via incorrect passwords, as well as just keeping the tool efficient and preventing attempts incorrect usernames, incorrect tenants, etc.
 
-If you want to audit all with all built-in user agents you can pass the `--ua_all` flag. Currently there are various user agents built-in which target various operating systems (Android, iOS, Linux, Mac, Windows) and various browsers (Chrome, Firefox, Safari).
+If you want to audit all endpoints with all built-in user agents you can pass the `--ua_all` flag. Currently there are various user agents built-in which target various operating systems (Android, iOS, Linux, Mac, Windows) and various browsers (Chrome, Firefox, Safari).
 
 There are multiple helper functions which can list all the built-in resources, client ids, and user agents.
 

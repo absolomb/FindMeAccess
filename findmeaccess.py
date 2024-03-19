@@ -143,9 +143,14 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
             raise ValueError(colored(f"[!] The account {username} doesn't exist.","red", attrs=['bold']))
         
         # Microsoft MFA 
-        elif "AADSTS50079" in response.text or "AADSTS50076" in response.text:
+        elif "AADSTS50076" in response.text:
             message_string = colored("Microsoft MFA Required or blocked by conditional access","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string}")
+        
+        # Must enroll in MFA 
+        elif "AADSTS50079" in response.text:
+            message_string = colored("MFA enrollment required but not configured!","green", attrs=['bold'])
+            print(f"[+] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string}")
         
         # Conditional Access 
         elif "AADSTS53003" in response.text:
@@ -259,7 +264,7 @@ def get_token(username, password, custom_resource, custom_client_id, custom_user
     except ValueError as e:
        print(e)
 
-# Create a function to handle each combination of parameters
+# handle each combination of parameters
 def handle_combination(combination):
     username, password, resource, client_id, user_agent, proxy = combination
     return authenticate(username, password, resource, client_id, user_agent, proxy)
