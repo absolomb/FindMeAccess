@@ -68,6 +68,7 @@ client_ids = {
    "Microsoft Tunnel" : "eb539595-3fe1-474e-9c1d-feb3625d1be5",
    "Microsoft Whiteboard Client" : "57336123-6e14-4acc-8dcf-287b6088aa28",
    "Office 365 Management" : "00b41c95-dab0-4487-9791-b9d2c32c80f2",
+   "Office 365 Exchange Online" : "00000002-0000-0ff1-ce00-000000000000",
    "Office UWP PWA" : "0ec893e0-5785-4de6-99da-4ed124e5296c",
    "OneDrive iOS App" : "af124e86-4e96-495a-b70a-90f90ab96707",
    "OneDrive SyncEngine" : "ab9b8c07-8f02-4f72-87fa-80105867a763",
