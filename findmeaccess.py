@@ -36,9 +36,12 @@ resources = {
 final_results = {}
 
 # https://github.com/secureworks/family-of-client-ids-research/blob/main/known-foci-clients.csv
+# some from here too after filtering: https://learn.microsoft.com/en-us/troubleshoot/azure/active-directory/verify-first-party-apps-sign-in
 client_ids = {
    "Accounts Control UI" : "a40d7d7d-59aa-447e-a655-679a4107e548",
+   "Enterprise Roaming and Backup" : "60c8bde5-3167-4f92-8fdb-059f6176dc0f",
    "M365 Compliance Drive Client" : "be1918be-3fe3-4be9-b32b-b542fc27f02e",
+   "Microsoft Authentication Broker" : "29d9ed98-a469-4536-ade2-f981bc1d605e",
    "Microsoft Authenticator App" : "4813382a-8fa7-425e-ab75-3b753aab3abb",
    "Microsoft Azure CLI" : "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
    "Microsoft Azure PowerShell" : "1950a258-227b-4e31-a9cf-717495945fc2",
@@ -46,12 +49,15 @@ client_ids = {
    "Microsoft Bing Search" : "cf36b471-5b44-428c-9ce7-313bf84528de",
    "Microsoft Defender for Mobile" : "dd47d17a-3194-4d86-bfd5-c6ae6f5651e3",
    "Microsoft Defender Platform" : "cab96880-db5b-4e15-90a7-f3f1d62ffe39",
+   "Microsoft Docs" : "18fbca16-2224-45f6-85b0-f7bf2b39b3f3",
    "Microsoft Edge Enterprise New Tab Page" : "d7b530a4-7680-4c23-a8bf-c52c121d2e87",
    "Microsoft Edge" : "e9c51622-460d-4d3d-952d-966a5b1da34c",
    "Microsoft Edge2" : "ecd6b820-32c2-49b6-98a6-444530e5a77a",
    "Microsoft Edge3" : "f44b1140-bc5e-48c6-8dc0-5cf5a53c0e34",
+   "Microsoft Exchange REST API Based Powershell" : "fb78d390-0c51-40cd-8e17-fdbfab77341b",
    "Microsoft Flow" : "57fcbcfa-7cee-4eb1-8b25-12d2030b4ee0",
    "Microsoft Intune Company Portal" : "9ba1a5c7-f17a-4de9-a1f1-6178c8d51223",
+   "Microsoft Intune Windows Agent" : "fc0f3af4-6835-4174-b806-f7db311fd2f3",
    "Microsoft Office" : "d3590ed6-52b3-4102-aeff-aad2292ab01c",
    "Microsoft Planner" : "66375f6b-983f-4c2c-9701-d680650f588f",
    "Microsoft Power BI" : "c0d2a505-13b8-4ae0-aa9e-cddd5eab0b12",
@@ -71,8 +77,10 @@ client_ids = {
    "PowerApps" : "4e291c71-d680-4d0e-9640-0a3358e31177",
    "SharePoint Android" : "f05ff7c9-f75a-4acd-a3b5-f4b6a870245d",
    "SharePoint" : "d326c1ce-6cc6-4de2-bebc-4591e5e13ef0",
+   "Universal Store Native Client" : "268761a2-03f3-40df-8a8b-c3db24145b6b",
    "Visual Studio" : "872cd9fa-d31f-45e0-9eab-6e460a02d1f1",
    "Windows Search" : "26a7ee05-5602-4d76-a7ba-eae8b7b67941",
+   "Windows Spotlight" : "1b3c667f-cde3-4090-b60b-3d2abd0117f0",
    "Yammer iPhone" : "a569458c-7f2b-45cb-bab9-b7dee514d112",
 }
 
@@ -175,6 +183,11 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
             message_string = colored("Client_id not authorized for resource","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
 
+        # Assertion or secret required for resource
+        elif "AADSTS7000218" in response.text:
+            message_string = colored("client_assertion or client_secret required","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
+
         # Suspicious activity
         elif "AADSTS53004" in response.text:
             message_string = colored("Suspicious activity","yellow", attrs=['bold'])
@@ -198,7 +211,7 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
 
         # default unknown
         else:
-            response_data = json.loads(response)
+            response_data = json.loads(response.text)
             error_description = response_data.get('error_description')
             raise ValueError(colored(f"[!] Unknown error encountered: {error_description}","red", attrs=['bold']))
 
@@ -368,7 +381,7 @@ def print_table(results):
   print("\n\n"+tabulate(table_data, headers=[colored("Resource", attrs=['bold']), colored("Accessible w/o MFA",attrs=['bold']), colored("Accessible Client IDs",attrs=['bold'])], tablefmt="grid"))
 
 def main():
-    banner = "\nFindMeAccess v1.0\n"
+    banner = "\nFindMeAccess v1.1\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
