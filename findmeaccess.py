@@ -189,11 +189,16 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
             message_string = colored("client_assertion or client_secret required","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
 
+        # User blocked
+        elif "AADSTS53011" in response.text:
+            message_string = colored("User blocked due to risk on home tenant","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
+        
         # Suspicious activity
         elif "AADSTS53004" in response.text:
             message_string = colored("Suspicious activity","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
-        
+
         # Empty password
         elif "AADSTS900144" in response.text:
            raise ValueError(colored(f"[!] No password provided for {username}","red", attrs=['bold']))
