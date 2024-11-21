@@ -40,6 +40,7 @@ final_results = {}
 client_ids = {
    "Accounts Control UI" : "a40d7d7d-59aa-447e-a655-679a4107e548",
    "Enterprise Roaming and Backup" : "60c8bde5-3167-4f92-8fdb-059f6176dc0f",
+   "Intune MAM" : "6c7e8096-f593-4d72-807f-a5f86dcc9c77",
    "M365 Compliance Drive Client" : "be1918be-3fe3-4be9-b32b-b542fc27f02e",
    "Microsoft Authentication Broker" : "29d9ed98-a469-4536-ade2-f981bc1d605e",
    "Microsoft Authenticator App" : "4813382a-8fa7-425e-ab75-3b753aab3abb",
@@ -99,11 +100,80 @@ user_agents = {
   "Windows Phone" : "Mozilla/5.0 (Windows Mobile 10; Android 10.0; Microsoft; Lumia 950XL) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36 Edge/40.15254.603"
 }
 
+# taken from TokenTacticsv2
+scopes = {
+  "Azure Core Management" : ("https://management.core.windows.net/.default offline_access openid", "Microsoft Office"),
+  "Azure Graph" : ("https://graph.windows.net/.default offline_access openid", "Microsoft Office"),
+  "Azure KeyVault" : ("https://vault.azure.net/.default offline_access openid", "Microsoft Office"),
+  "Azure Management" : ("https://management.azure.com/.default offline_access openid", "Microsoft Office"),
+  "Azure Storage" : ("https://storage.azure.com/.default offline_access openid", "Microsoft Office"),
+  "Microsoft Graph" : ("https://graph.microsoft.com/.default offline_access openid", "Microsoft Office"),
+  "Microsoft Manage" : ("https://enrollment.manage.microsoft.com/.default offline_access openid", "Microsoft Office"),
+  "Office Apps" : ("https://officeapps.live.com/.default offline_access openid", "OneDrive SyncEngine"),
+  "Office Manage" : ("https://manage.office.com/.default offline_access openid", "Office 365 Management"),
+  "OneDrive" : ("https://officeapps.live.com/.default offline_access openid", "OneDrive SyncEngine"),
+  "Outlook" : ("https://outlook.office365.com/.default offline_access openid", "Microsoft Office"),
+  "Substrate" : ("https://substrate.office.com/.default offline_access openid", "Microsoft Office"),
+  "Teams" : ("https://api.spaces.skype.com/.default offline_access openid", "Microsoft Teams"),
+  "Yammer" : ("https://api.spaces.skype.com/.default offline_access openid", "Microsoft Office"),
+}
+
 # pretty print dictionaries
 def print_aligned(dictionary):
     max_key_length = max(len(key) for key in dictionary.keys())
     for key, value in dictionary.items():
       print(f"{key.ljust(max_key_length)} : {value}")
+
+def get_tenant_id(domain, proxy):
+  urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+  url = f"https://login.microsoftonline.com/{domain}/.well-known/openid-configuration"
+  
+  response = requests.get(url, proxies=proxy, verify=False)
+
+  if response.status_code == 200:      
+      json_text = json.loads(response.text)
+      auth_endpoint = json_text.get("authorization_endpoint")
+      tenant_id = auth_endpoint.split("/")[3]  
+      print(f"[+] Got Tenant ID: {tenant_id}")
+      return tenant_id
+
+  else:
+     print(f"[!] Error retrieving tenant ID - HTTP Status Code {response.status_code}")
+     return
+
+def refresh_authenticate(client_id, user_agent, proxy, tenant_id, refresh_token, scope):
+    
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    url = f"https://login.microsoft.com/{tenant_id}/oauth2/v2.0/token" 
+
+    parameters = {
+        'refresh_token': refresh_token,
+        'client_id': client_id,
+        'grant_type': 'refresh_token',
+        'scope': scope
+    }
+
+    headers = {
+        'User-Agent': user_agent[1],
+        'Accept': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+
+    response = requests.post(url, data=parameters, headers=headers, proxies=proxy, verify=False)
+    
+    if response.status_code == 200:
+        success_string = colored("Got Token!","green", attrs=['bold'])
+        print(f"[+] {success_string}")
+        json_text = json.loads(response.text)
+        print(json.dumps(json_text, indent=2))
+
+    else:
+        response_data = json.loads(response.text)
+        error_description = response_data.get('error_description')
+        print(colored(f"[!] Error getting token: {error_description}","red", attrs=['bold']))
+       
+    return
+
 
 # main authentication function
 def authenticate(username, password, resource, client_id, user_agent, proxy, get_token=False):
@@ -165,10 +235,25 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
         elif "AADSTS53003" in response.text:
             message_string = colored("Blocked by conditional access policy","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
+
+        # Conditional Access 
+        elif "AADSTS50105" in response.text:
+            message_string = colored("Application blocked by conditional access policy","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
         
         # Third party MFA
         elif "AADSTS50158" in response.text:
             message_string = colored("Third-party MFA required","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
+
+        # Compliant Device
+        elif "AADSTS53000" in response.text:
+            message_string = colored("Requires compliant/managed device","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
+
+        # Consent
+        elif "AADSTS65001" in response.text:
+            message_string = colored("User or administrator has not consented to use the application","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
 
         # Locked out account or hitting smart lockout
@@ -222,6 +307,7 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
             raise ValueError(colored(f"[!] Unknown error encountered: {error_description}","red", attrs=['bold']))
 
         return
+   
 
 # do a test authentication to validate creds and to prevent a bunch of attempts on accounts that throw errors
 def do_test_auth(username, password, proxy):
@@ -237,8 +323,8 @@ def do_test_auth(username, password, proxy):
     client_id = (client_key, client_value)
     authenticate(username, password, resource, client_id, user_agent, proxy)
 
-# function to get tokens
-def get_token(username, password, custom_resource, custom_client_id, custom_user_agent, proxy):
+# function to get tokens with a password
+def get_token_with_password(username, password, custom_resource, custom_client_id, custom_user_agent, proxy):
     print("[*] Getting token")
     if custom_user_agent is None:
       print("[-] No User Agent specified, using Windows 10 Chrome")
@@ -249,8 +335,8 @@ def get_token(username, password, custom_resource, custom_client_id, custom_user
       user_agent = ("Custom", custom_user_agent)
 
     if custom_resource is None:
-       print("[-] No resource resource specified. Use '-e' argument")
-       sys.exit()
+       print("[-] No resource resource specified. Using Microsoft Graph API")
+       custom_resource = "Microsoft Graph API"
 
     # check if resource provided is a key in resources dict
     if custom_resource in resources:
@@ -268,8 +354,8 @@ def get_token(username, password, custom_resource, custom_client_id, custom_user
        resource = ("Custom", custom_resource)
 
     if custom_client_id is None:
-       print("[-] No client id specified. Use '-c' argument")
-       sys.exit()
+       print("[-] No client id specified. Using Microsoft Office")
+       custom_client_id = "Microsoft Office"
 
     if custom_client_id in client_ids:
       client_id_value = client_ids[custom_client_id]
@@ -282,6 +368,40 @@ def get_token(username, password, custom_resource, custom_client_id, custom_user
       authenticate(username, password, resource, client_id, user_agent, proxy, True)
     except ValueError as e:
        print(e)
+
+# function to get tokens with a refresh token
+def get_token_with_refresh(tenant_id, client_id, user_agent, proxy, scope, refresh_token):
+    
+    if scope is None:
+       print("[-] No token scope specified. Use '-s' argument")
+       sys.exit()
+
+   # check if scope provided is a key in scopes dict
+    if scope in scopes:
+      scope_value, client_id_ref = scopes[scope]
+
+      if client_id is None:
+        client_id = client_ids[client_id_ref]
+    else:
+       print("[-] Unknown token scope specified. List with --list_scopes")
+       sys.exit()
+
+    
+    if user_agent is None:
+      print("[-] No User Agent specified, using Windows 10 Chrome")
+      ua_key = "Windows 10 Chrome"
+      ua_value = user_agents[ua_key]
+      user_agent = (ua_key, ua_value)
+    else:
+      user_agent = ("Custom", user_agent)
+
+    try:
+       print(f"[*] Getting token for {scope} with client_id: {client_id}")
+       refresh_authenticate(client_id, user_agent, proxy, tenant_id, refresh_token, scope_value)
+    except ValueError as e:
+       print(e)
+
+    
 
 # handle each combination of parameters
 def handle_combination(combination):
@@ -386,60 +506,72 @@ def print_table(results):
 
   print("\n\n"+tabulate(table_data, headers=[colored("Resource", attrs=['bold']), colored("Accessible w/o MFA",attrs=['bold']), colored("Accessible Client IDs",attrs=['bold'])], tablefmt="grid"))
 
-def main():
-    banner = "\nFindMeAccess v1.1\n"
-    print(banner)
-
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('-u', metavar="user", help="User to check", type=str)
-    parser.add_argument('-p', metavar="password", help="Password for account", type=str)      
-    parser.add_argument('--threads', help="Number of threads to run (Default: 10 threads)", type=int,default=10)
-    parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False)
+def add_shared_arguments(parser):
+    parser.add_argument('--proxy', metavar="proxy", help="HTTP proxy to use - ie http://127.0.0.1:8080", type=str)
     parser.add_argument('--user_agent', help="User Agent to use", type=str)
     parser.add_argument('-c', metavar="clientid", help="clientid to use", type=str)
     parser.add_argument('-r', metavar="resource", help="resource to use", type=str)
-    parser.add_argument('--get_token', help="Grab a Token (use with clientid and resource flags)", action='store_true')
-    parser.add_argument('--list_resources', help="List all resources", action='store_true')  
-    parser.add_argument('--list_clients', help="List all client ids", action='store_true')  
-    parser.add_argument('--list_ua', help="List all user agents", action='store_true')
-    parser.add_argument('--proxy', metavar="proxy", help="HTTP proxy to use - ie http://127.0.0.1:8080", type=str)
+    parser.add_argument('--threads', help="Number of threads to run (Default: 10 threads)", type=int,default=10)
+    parser.add_argument('-u', metavar="user", help="User to check", type=str)
+    parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
+
+def main():
+    banner = "\nFindMeAccess v2.0\n"
+    print(banner)
+
+    parser = argparse.ArgumentParser(description='')
+    subparsers = parser.add_subparsers(dest='command')
+
+    audit_parser = subparsers.add_parser("audit", help="Used for auditing gaps in MFA")
+    add_shared_arguments(audit_parser)
+    audit_parser.add_argument('--list_resources', help="List all resources", action='store_true')  
+    audit_parser.add_argument('--list_clients', help="List all client ids", action='store_true')  
+    audit_parser.add_argument('--list_ua', help="List all user agents", action='store_true')
+    audit_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False) 
+
+    token_parser = subparsers.add_parser("token", help="Used for getting tokens")
+    add_shared_arguments(token_parser)
+    token_parser.add_argument('--list_scopes', help="List all token scopes", action='store_true')
+    token_parser.add_argument('-d', help="tenant domain", type=str)
+    token_parser.add_argument('-s',  help="Token scope - show with --list_scopes", type=str)
+    token_parser.add_argument('--refresh_token', help="Refresh token", type=str)
+    token_parser.add_argument('--get_all', help="Get tokens for every scope", action='store_true')
+  
+        
 
     args = parser.parse_args()
     if len(sys.argv) == 1:
       parser.print_help()
-    
-    if args.list_resources:
-       print_aligned(resources)
-    
-    elif args.list_clients:
-       print_aligned(client_ids)
 
-    elif args.list_ua:
-       print_aligned(user_agents)
-
+    if args.proxy:
+      proxies = {
+            "http": args.proxy, 
+            "https": args.proxy
+            }
     else:
-       
-      if not args.u:
-        print("[-] No username specified with '-u' option")
-        sys.exit()
-      
-      if not args.p:
-        password = getpass.getpass()
-      else:
-        password = args.p
-      
-      if args.proxy:
-        proxies = {
-           "http": args.proxy, 
-           "https": args.proxy
-           }
-      else:
-        proxies = {}
-
-      if args.get_token:
-          get_token(args.u, password, args.r, args.c, args.user_agent, proxies)
+      proxies = {}
     
+    if args.command == "audit":
+      if args.list_resources:
+        print_aligned(resources)
+      
+      elif args.list_clients:
+        print_aligned(client_ids)
+
+      elif args.list_ua:
+        print_aligned(user_agents)
+
       else:
+        
+        if not args.u:
+          print("[-] No username specified with '-u' option")
+          sys.exit()
+        
+        if not args.p:
+          password = getpass.getpass()
+        else:
+          password = args.p
+        
 
         try:
           do_test_auth(args.u, password, proxies)
@@ -460,6 +592,42 @@ def main():
             print(e)
             print("[!] Exception caught, exiting...")
             sys.exit()
+    
+    elif args.command == "token":
+
+      if args.list_scopes:
+        print_aligned(scopes)
+      
+      else:
+          if args.u:
+            if not args.p:
+              password = getpass.getpass()
+            else:
+                password = args.p
+
+            get_token_with_password(args.u, password, args.r, args.c, args.user_agent, proxies)
+
+          else:
+            if not args.d:
+              print("[-] No domain specified with '-d' option")
+              sys.exit()
+
+            tenant_id = get_tenant_id(args.d, proxies)
+
+            if tenant_id is not None :
+                
+                if args.refresh_token is not None:
+                  if args.get_all:
+                    for scope in scopes:
+                        get_token_with_refresh(tenant_id, args.c, args.user_agent, proxies, scope, args.refresh_token)
+                  else:
+                    get_token_with_refresh(tenant_id, args.c, args.user_agent, proxies, args.s, args.refresh_token)
+                
+                else:
+                   print("[-] No refresh token specified with '--refresh_token' option")
+
+            else:
+              print("[-] Exiting due to tenant ID failure - check domain name")
     
 if __name__ == "__main__":
     main()
