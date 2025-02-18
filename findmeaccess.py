@@ -255,6 +255,11 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
         elif "AADSTS65001" in response.text:
             message_string = colored("User or administrator has not consented to use the application","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {user_agent[0]} - {message_string} ")
+        
+        # Disabled application
+        elif "AADSTS7000112:" in response.text:
+            message_string = colored("Application disabled","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
 
         # Locked out account or hitting smart lockout
         elif "AADSTS50053" in response.text:
@@ -516,7 +521,7 @@ def add_shared_arguments(parser):
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
 def main():
-    banner = "\nFindMeAccess v2.0\n"
+    banner = "\nFindMeAccess v2.1\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
