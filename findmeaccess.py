@@ -548,13 +548,13 @@ def main():
     if len(sys.argv) == 1:
       parser.print_help()
 
-    if args.proxy:
-      proxies = {
+    if getattr(args, 'proxy', None):
+        proxies = {
             "http": args.proxy, 
             "https": args.proxy
             }
     else:
-      proxies = {}
+        proxies = {}
     
     if args.command == "audit":
       if args.list_resources:
