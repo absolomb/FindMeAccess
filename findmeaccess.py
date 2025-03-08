@@ -414,7 +414,7 @@ def handle_combination(combination):
     return authenticate(username, password, resource, client_id, user_agent, proxy)
     
 # mass check resources, client ids, and user agents
-def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy):
+def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None):
   print("[*] Starting checks")
   results = []
   resources_to_check = {}
@@ -437,15 +437,24 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
   else:
      resources_to_check = resources
 
+  # Filter client_ids based on custom_client (-c flag)
+  if custom_client is not None:
+      if custom_client in client_ids:
+          client_ids_to_use = {custom_client: client_ids[custom_client]}
+      else:
+          client_ids_to_use = {"Custom": custom_client}
+  else:
+      client_ids_to_use = client_ids
+
   # generate final results dict
   for resource in resources_to_check:
      final_results[resource] = {'Accessible': False, 'Accessible Client IDs': 0}
-
+  
   if all_user_agents:
-    combinations = [(username, password, resource, client_id, user_agent, proxy)
-                for resource in resources_to_check.items()
-                for client_id in client_ids.items()
-                for user_agent in user_agents.items()]
+      combinations = [(username, password, resource, client_id, user_agent, proxy)
+                      for resource in resources_to_check.items()
+                      for client_id in client_ids_to_use.items()
+                      for user_agent in user_agents.items()]
   else:
       if custom_user_agent is not None:
           ua_value = custom_user_agent
@@ -455,10 +464,10 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           ua_key = "Windows 10 Chrome"
           ua_value = user_agents[ua_key]
           user_agent = (ua_key, ua_value)
-      
       combinations = [(username, password, resource, client_id, user_agent, proxy)
-                for resource in resources_to_check.items()
-                for client_id in client_ids.items()]
+                      for resource in resources_to_check.items()
+                      for client_id in client_ids_to_use.items()]
+
   try:
     error_raised = False
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
@@ -588,7 +597,7 @@ def main():
           sys.exit()
 
         try:
-          results = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies)
+          results = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c)
           if not args.ua_all:
             print_table(results)
           write_results(args.u, results)
