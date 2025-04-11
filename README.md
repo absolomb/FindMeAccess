@@ -3,17 +3,18 @@
 FindMeAccess is a tool useful for finding gaps in Azure/M365 MFA requirements for different resources, client ids, and user agents. The tool is mostly based off [Spray365's](https://github.com/MarkoH17/Spray365) auditing logic. The goal is to provide a streamlined way to quickly check gaps in coverage, as well as obtain tokens.
 
 ```
-FindMeAccess v2.0
+FindMeAccess v3.0
 
-usage: findmeaccess.py [-h] {audit,token} ...
+usage: findmeaccess.py [-h] {audit,token,adfs} ...
 
 positional arguments:
-  {audit,token}
-    audit        Used for auditing gaps in MFA
-    token        Used for getting tokens
+  {audit,token,adfs}
+    audit             Used for auditing gaps in MFA
+    token             Used for getting tokens
+    adfs              Used for auditing gaps in federated setups with ADFS
 
 options:
-  -h, --help     show this help message and exit
+  -h, --help          show this help message and exit
 ```
 
 ## Installation
@@ -242,6 +243,53 @@ Of if you want to quickly check your refresh tokens against all of the scopes an
 
 ```
 python findmeaccess.py token -d domain.com --get_all --refresh_token <token>
+```
+
+## Federated Auditing with ADFS
+
+**NOTE: This feature has only been tested with limited environments and may not function fully with all setups.**
+
+When tenants are federated to use ADFS with authentication, the regular auditing functionality will not function. The `adfs` command allows for auditing of various scopes, client ids, and user agents by first getting a SAML assertion from ADFS and then forwarding the assertion onto Azure. If gaps are discovered, tokens are automatically displayed.
+
+```
+FindMeAccess v3.0
+
+usage: findmeaccess.py adfs [-h] [--proxy proxy] [--user_agent USER_AGENT] [-c clientid] [-r resource] [--threads THREADS] [-u user] [-p password] [--list_scopes] [-s S] [--get_all] [--url URL]
+                            [--ua_all]
+
+options:
+  -h, --help            show this help message and exit
+  --proxy proxy         HTTP proxy to use - ie http://127.0.0.1:8080
+  --user_agent USER_AGENT
+                        User Agent to use
+  -c clientid           clientid to use
+  -r resource           resource to use
+  --threads THREADS     Number of threads to run (Default: 10 threads)
+  -u user               User to check
+  -p password           Password for account
+  --list_scopes         List all token scopes
+  -s S                  Token scope - show with --list_scopes
+  --get_all             Get tokens for every scope
+  --url URL             ADFS endpoint ex - https://adfs.domain.com
+  --ua_all              Check all users agents (Default: False)
+```
+
+To audit all scopes use the `--get_all` flag.
+
+```
+python findmeaccess.py adfs  -u username@domain.com -p Password123 --url https://adfs.domain.com --get_all
+```
+
+And to all audit all scopes with all user agents use the `--ua_all` flag.
+
+```
+python findmeaccess.py adfs  -u username@domain.com -p Password123 --url https://adfs.domain.com --get_all --ua_all
+```
+
+To target a specific scope only, you can first `--list_scopes` and then provide a scope target with `-s`
+
+```
+python findmeaccess.py adfs -s 'Azure Graph' -u username@domain.com -p Password123 --url https://adfs.domain.com
 ```
 
 ## Credits

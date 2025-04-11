@@ -7,6 +7,10 @@ from termcolor import colored
 import json
 from tabulate import tabulate
 import getpass
+from datetime import datetime, timedelta
+from lxml import etree
+import base64
+import uuid
 
 
 # endpoint resources 
@@ -406,7 +410,166 @@ def get_token_with_refresh(tenant_id, client_id, user_agent, proxy, scope, refre
     except ValueError as e:
        print(e)
 
-    
+def get_azure_token_via_adfs(username, password, scope, custom_user_agent, client_id, adfs_url ,proxies, ua_name=None):
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    if scope is None:
+       print("[-] No token scope specified. Use '-s' argument")
+       sys.exit()
+
+   # check if scope provided is a key in scopes dict
+    if scope in scopes:
+      scope_value, client_id_ref = scopes[scope]
+
+      if client_id is None:
+        client_id = client_ids[client_id_ref]
+    else:
+       print("[-] Unknown token scope specified. List with --list_scopes")
+       sys.exit()
+
+    if custom_user_agent is None:
+      ua_key = "Windows 10 Chrome"
+      ua_value = user_agents[ua_key]
+      user_agent = (ua_key, ua_value)
+    else:
+      if ua_name is not None:
+         user_agent = (ua_name, custom_user_agent)
+      else:
+        user_agent = ("Custom", custom_user_agent)
+
+    azure_token_endpoint="https://login.microsoftonline.com/organizations/oauth2/v2.0/token"
+
+    ws_trust_url = f"{adfs_url}/adfs/services/trust/13/usernamemixed"
+    now = datetime.utcnow()
+    created = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    expires = (now + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    message_id = f"urn:uuid:{str(uuid.uuid4())}"
+
+    soap_request = f"""<?xml version="1.0" encoding="utf-8"?>
+    <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+                xmlns:wsa="http://www.w3.org/2005/08/addressing"
+                xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
+      <s:Header>
+        <wsa:Action s:mustUnderstand="1">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action>
+        <wsa:MessageID>{message_id}</wsa:MessageID>
+        <wsa:ReplyTo>
+          <wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address>
+        </wsa:ReplyTo>
+        <wsa:To s:mustUnderstand="1">{ws_trust_url}</wsa:To>
+        <wsse:Security s:mustUnderstand="1"
+            xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+          <wsu:Timestamp wsu:Id="_0">
+            <wsu:Created>{created}</wsu:Created>
+            <wsu:Expires>{expires}</wsu:Expires>
+          </wsu:Timestamp>
+          <wsse:UsernameToken wsu:Id="ADALUsernameToken">
+            <wsse:Username>{username}</wsse:Username>
+            <wsse:Password>{password}</wsse:Password>
+          </wsse:UsernameToken>
+        </wsse:Security>
+      </s:Header>
+      <s:Body>
+        <wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">
+          <wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy">
+            <wsa:EndpointReference>
+              <wsa:Address>urn:federation:MicrosoftOnline</wsa:Address>
+            </wsa:EndpointReference>
+          </wsp:AppliesTo>
+          <wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType>
+          <wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>
+        </wst:RequestSecurityToken>
+      </s:Body>
+    </s:Envelope>"""
+
+    headers = {
+        "Content-Type": "application/soap+xml; charset=utf-8"
+    }
+
+    print("[*] Requesting SAML token from ADFS...")
+    response = requests.post(ws_trust_url, data=soap_request.encode('utf-8'),
+                             headers=headers, proxies=proxies, verify=False)
+
+    xml = etree.fromstring(response.content)
+    saml = xml.find(".//{urn:oasis:names:tc:SAML:1.0:assertion}Assertion")
+    if saml is None:
+        print("[!] SAML assertion not found - credentials may be invalid")
+        print(response.text)
+        sys.exit()
+        return None
+
+    saml_token = etree.tostring(saml, encoding='unicode')
+    saml_b64 = base64.b64encode(saml_token.encode("utf-8")).decode("utf-8")
+
+    print("[+] Got SAML token!")
+
+    data = {
+        'grant_type': 'urn:ietf:params:oauth:grant-type:saml1_1-bearer',
+        'client_id': client_id,
+        'assertion': saml_b64,
+        'scope': scope_value,
+    }
+    headers = {
+       'User-Agent': user_agent[1],
+       'Accept': 'application/json',
+       'Content-Type': 'application/x-www-form-urlencoded'
+    }
+
+    token_response = requests.post(azure_token_endpoint, data=data, proxies=proxies, verify=False, headers=headers)
+
+    if token_response.status_code == 200:
+        success_string = colored("Got Token!","green", attrs=['bold'])
+        print(f"[+] {scope} - {client_id_ref} - {user_agent} - {success_string}")
+        json_text = json.loads(response.text)
+        print(json.dumps(json_text, indent=2))
+
+    else:
+        # Microsoft MFA 
+        if "AADSTS50076" in token_response.text:
+            message_string = colored("Microsoft MFA Required or blocked by conditional access","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+        
+        # Must enroll in MFA 
+        elif "AADSTS50079" in token_response.text:
+            message_string = colored("MFA enrollment required but not configured!","green", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+        
+        # Conditional Access 
+        elif "AADSTS53003" in token_response.text:
+            message_string = colored("Blocked by conditional access policy","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+
+        # Conditional Access 
+        elif "AADSTS50105" in token_response.text:
+            message_string = colored("Application blocked by conditional access policy","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+        
+        # Third party MFA
+        elif "AADSTS50158" in token_response.text:
+            message_string = colored("Third-party MFA required","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+
+        # Compliant Device
+        elif "AADSTS53000" in token_response.text:
+            message_string = colored("Requires compliant/managed device","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+
+        # User blocked
+        elif "AADSTS53011" in token_response.text:
+            message_string = colored("User blocked due to risk on home tenant","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+        
+        # Suspicious activity
+        elif "AADSTS53004" in token_response.text:
+            message_string = colored("Suspicious activity","yellow", attrs=['bold'])
+            print(f"[-] {scope} - {client_id_ref} - {user_agent[0]} - {message_string}")
+        
+        else:
+            response_data = json.loads(token_response.text)
+            error_description = response_data.get('error_description')
+            print(colored(f"[!]{scope} - {client_id_ref} - {user_agent[0]} - {message_string} - Unknown error encountered: {error_description}","red", attrs=['bold']))
+        
+        return
 
 # handle each combination of parameters
 def handle_combination(combination):
@@ -530,7 +693,7 @@ def add_shared_arguments(parser):
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
 def main():
-    banner = "\nFindMeAccess v2.1\n"
+    banner = "\nFindMeAccess v3.0\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
@@ -550,6 +713,14 @@ def main():
     token_parser.add_argument('-s',  help="Token scope - show with --list_scopes", type=str)
     token_parser.add_argument('--refresh_token', help="Refresh token", type=str)
     token_parser.add_argument('--get_all', help="Get tokens for every scope", action='store_true')
+
+    adfs_parser = subparsers.add_parser("adfs", help="Used for auditing gaps in federated setups with ADFS")
+    add_shared_arguments(adfs_parser)
+    adfs_parser.add_argument('--list_scopes', help="List all token scopes", action='store_true')
+    adfs_parser.add_argument('-s',  help="Token scope - show with --list_scopes", type=str)
+    adfs_parser.add_argument('--get_all', help="Get tokens for every scope", action='store_true')
+    adfs_parser.add_argument('--url',  help="ADFS endpoint ex - https://adfs.domain.com", type=str)
+    adfs_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False)
   
         
 
@@ -643,5 +814,33 @@ def main():
             else:
               print("[-] Exiting due to tenant ID failure - check domain name")
     
+    elif args.command == "adfs":
+
+      if args.list_scopes:
+        print_aligned(scopes)
+        return
+
+      if not args.url:
+         print("[!] ADFS URL required via --url")
+         return
+      
+      else:
+          if args.u:
+            if not args.p:
+              password = getpass.getpass()
+            else:
+                password = args.p
+            
+            if args.get_all:
+              for scope in scopes:
+                if not args.ua_all:
+                  get_azure_token_via_adfs(args.u, password, scope, args.user_agent, args.c, args.url, proxies)
+                else:
+                   for ua_name, user_agent in user_agents.items():
+                      get_azure_token_via_adfs(args.u, password, scope, user_agent, args.c, args.url, proxies, ua_name)
+                      
+            else:
+              get_azure_token_via_adfs(args.u, password, args.s, args.user_agent, args.c, args.url, proxies)
+          
 if __name__ == "__main__":
     main()
