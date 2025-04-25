@@ -519,8 +519,8 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
 
     if token_response.status_code == 200:
         success_string = colored("Got Token!","green", attrs=['bold'])
-        print(f"[+] {scope} - {client_id_ref} - {user_agent} - {success_string}")
-        json_text = json.loads(response.text)
+        print(f"[+] {scope} - {client_id_ref} - {user_agent[0]} - {success_string}")
+        json_text = json.loads(token_response.text)
         print(json.dumps(json_text, indent=2))
 
     else:
@@ -840,7 +840,11 @@ def main():
                       get_azure_token_via_adfs(args.u, password, scope, user_agent, args.c, args.url, proxies, ua_name)
                       
             else:
-              get_azure_token_via_adfs(args.u, password, args.s, args.user_agent, args.c, args.url, proxies)
+              if not args.ua_all:
+                get_azure_token_via_adfs(args.u, password, args.s, args.user_agent, args.c, args.url, proxies)
+              else:
+                 for ua_name, user_agent in user_agents.items():
+                      get_azure_token_via_adfs(args.u, password, args.s, user_agent, args.c, args.url, proxies, ua_name)
           
 if __name__ == "__main__":
     main()
