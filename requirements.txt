@@ -2,3 +2,5 @@ tabulate
 termcolor
 requests
 lxml
+cryptography
+PyJWT
