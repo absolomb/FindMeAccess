@@ -245,6 +245,46 @@ Of if you want to quickly check your refresh tokens against all of the scopes an
 python findmeaccess.py token -d domain.com --get_all --refresh_token <token>
 ```
 
+## PRT Auditing
+
+When you have a Primary Refresh Token (PRT), you can audit all resource/client ID combinations using the PRT instead of a password. This leverages the `roadtools` library (roadtx) under the hood to perform PRT-based authentication via the AAD broker plugin.
+
+### Using a roadtx .prt file
+
+If you have a `.prt` file from roadtx (e.g. `roadtx.prt`), you can pass it directly:
+
+```
+python findmeaccess.py audit --prt_file roadtx.prt -d domain.com
+```
+
+### Using raw PRT and session key
+
+You can also provide the PRT and session key values directly:
+
+```
+python findmeaccess.py audit --prt <prt_value> --prt_sessionkey <session_key_hex> -d domain.com
+```
+
+### Filtering by resource, client ID, or user agent
+
+The same flags from the standard audit apply — you can target a specific resource with `-r`, a specific client ID with `-c`, or test all user agents with `--ua_all`:
+
+```
+python findmeaccess.py audit --prt_file roadtx.prt -d domain.com -r "Microsoft Graph API"
+python findmeaccess.py audit --prt_file roadtx.prt -d domain.com -c "Microsoft Office" --ua_all
+```
+
+### PRT via ADFS subcommand
+
+PRT auditing is also available under the `adfs` subcommand with the same flags:
+
+```
+python findmeaccess.py adfs --prt_file roadtx.prt -d domain.com
+python findmeaccess.py adfs --prt <prt_value> --prt_sessionkey <session_key_hex> -d domain.com
+```
+
+Results are written to `prt-audit-accessible.txt` and a summary table is displayed with the header "Accessible (via PRT)".
+
 ## Federated Auditing with ADFS
 
 **NOTE: This feature has only been tested with limited environments and may not function fully with all setups.**
