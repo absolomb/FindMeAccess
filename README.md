@@ -46,6 +46,7 @@ options:
   --list_clients        List all client ids
   --list_ua             List all user agents
   --ua_all              Check all users agents (Default: False)
+  --config config_file  File containing clients, resources, and user agents
 ```
 
 For an initial run you just need to provide a username and password. The tool will first try all combinations of resources, client ids, but will only try using one user agent (Windows 10 Chrome). 
