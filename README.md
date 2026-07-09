@@ -46,6 +46,7 @@ options:
   --list_clients        List all client ids
   --list_ua             List all user agents
   --ua_all              Check all users agents (Default: False)
+  --config config_file  File containing clients, resources, and user agents
 ```
 
 For an initial run you just need to provide a username and password. The tool will first try all combinations of resources, client ids, but will only try using one user agent (Windows 10 Chrome). 
@@ -171,6 +172,29 @@ Specific resources can also be targeted with the `-r` flag via the resource name
 python findmeaccess.py audit -u username@domain.com -r "Azure Graph API" --ua_all
 python findmeaccess.py audit -u username@domain.com -r "https://graph.windows.net"
 ```
+Alternatively, a configuration file can be used to target multiple resources with different client ids and user agents. An example config is provided under `example_config` and is shown below. Proper names for each section can be used and an internal lookup will be performed for the associated value (e.g., msmamservice will resolve to msmamservice.api.application). If a resource, client id, or user agent is provided that is not built-in, it will be used as custom input. If any section is left blank, it will use all built-in values!
+
+Target 3 resources, 3 client ids, and 6 user agents (including one user agent that is not built-in)
+```
+[resources]
+Azure Graph API
+Microsoft Graph API
+msmamservice
+
+[clients]
+Microsoft Azure PowerShell
+Microsoft Azure CLI
+Microsoft Authentication Broker
+
+[user_agents]
+Windows 10 Chrome
+Linux Firefox
+Mac Firefox
+Android Chrome
+iPhone Safari
+Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/149.0.7827.137 Mobile/15E148 Safari/604.1
+```
+
 
 ## Getting a Token / TokenTactics 
 

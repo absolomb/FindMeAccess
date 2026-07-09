@@ -1,0 +1,16 @@
+[resources]
+Azure Graph API
+Microsoft Graph API
+msmamservice
+
+[clients]
+Microsoft Azure PowerShell
+Microsoft Azure CLI
+Microsoft Authentication Broker
+
+[user_agents]
+Windows 10 Chrome
+Linux Firefox
+Mac Firefox
+Android Chrome
+iPhone Safari

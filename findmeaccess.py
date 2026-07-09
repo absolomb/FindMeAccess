@@ -610,13 +610,52 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
 def handle_combination(combination):
     username, password, resource, client_id, user_agent, proxy = combination
     return authenticate(username, password, resource, client_id, user_agent, proxy)
-    
+
+# helper to resolve a single entry against a dict, returning (display_name, value) tuple
+def resolve_entry(entry, lookup_dict, label):
+    if entry in lookup_dict:
+        return (entry, lookup_dict[entry])
+    elif entry in lookup_dict.values():
+        for k, v in lookup_dict.items():
+            if v == entry:
+                return (k, entry)
+    return (f"Custom ({entry})", entry)
+
+# parse a sectioned config file into three dicts
+def parse_config_file(filepath):
+    sections = {'clients': {}, 'resources': {}, 'user_agents': {}}
+    current_section = None
+    seen_sections = set()
+    lookup = {'clients': client_ids, 'resources': resources, 'user_agents': user_agents}
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.lower() in ('[clients]', '[resources]', '[user_agents]'):
+                    current_section = line.lower()[1:-1]
+                    seen_sections.add(current_section)
+                elif current_section:
+                    name, value = resolve_entry(line, lookup[current_section], current_section)
+                    sections[current_section][name] = value
+    except FileNotFoundError:
+        print(colored(f"[!] Config file not found: {filepath}", "red", attrs=['bold']))
+        sys.exit()
+    if 'user_agents' in seen_sections and not sections['user_agents']:
+        sections['user_agents'] = user_agents
+    return sections['clients'], sections['resources'], sections['user_agents']
+
 # mass check resources, client ids, and user agents
-def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None):
+def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None):
   print("[*] Starting checks")
   results = []
   resources_to_check = {}
-  if custom_resource is not None:
+
+  # resolve resources
+  if config_resources:
+      resources_to_check = config_resources
+  elif custom_resource is not None:
     
     # check if resource provided is a key in resources dict
     if custom_resource in resources:
@@ -635,8 +674,10 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
   else:
      resources_to_check = resources
 
-  # Filter client_ids based on custom_client (-c flag)
-  if custom_client is not None:
+  # resolve client ids
+  if config_clients:
+      client_ids_to_use = config_clients
+  elif custom_client is not None:
       if custom_client in client_ids:
           client_ids_to_use = {custom_client: client_ids[custom_client]}
       else:
@@ -647,24 +688,30 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
   # generate final results dict
   for resource in resources_to_check:
      final_results[resource] = {'Accessible': False, 'Accessible Client IDs': 0}
-  
-  if all_user_agents:
+
+  # resolve user agents
+  if config_uas:
+      user_agents_to_use = config_uas
+  elif all_user_agents or (config_clients is not None or config_resources is not None):
+      user_agents_to_use = user_agents
+  else:
+      user_agents_to_use = None
+
+  if user_agents_to_use is not None:
       combinations = [(username, password, resource, client_id, user_agent, proxy)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()
-                      for user_agent in user_agents.items()]
+                      for user_agent in user_agents_to_use.items()]
   else:
       if custom_user_agent is not None:
-          ua_value = custom_user_agent
-          ua_key = "Custom"
-          user_agent = (ua_key, ua_value)
+          single_ua = resolve_entry(custom_user_agent, user_agents, "user_agent")
       else:
-          ua_key = "Windows 10 Chrome"
-          ua_value = user_agents[ua_key]
-          user_agent = (ua_key, ua_value)
-      combinations = [(username, password, resource, client_id, user_agent, proxy)
+          single_ua = ("Windows 10 Chrome", user_agents["Windows 10 Chrome"])
+      combinations = [(username, password, resource, client_id, single_ua, proxy)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()]
+
+  print(f"[*] Total combinations: {len(combinations)}")
 
   try:
     error_raised = False
@@ -679,7 +726,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           print(e) 
         sys.exit()
 
-    return results
+    return results, len(combinations)
   
   except KeyboardInterrupt:
     print(colored("[!] Ctrl+C detected, exiting...", "yellow"))
@@ -740,6 +787,7 @@ def main():
     audit_parser.add_argument('--list_clients', help="List all client ids", action='store_true')  
     audit_parser.add_argument('--list_ua', help="List all user agents", action='store_true')
     audit_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False) 
+    audit_parser.add_argument('--config', metavar="config_file", help="File containing clients, resources, and user_agents", type=str)
 
     token_parser = subparsers.add_parser("token", help="Used for getting tokens")
     add_shared_arguments(token_parser)
@@ -794,6 +842,11 @@ def main():
           password = args.p
         
 
+        if args.config and (args.c or args.r or args.user_agent or args.ua_all):
+          print(colored("[!] Cannot use --config with -c, -r, --user_agent, or --ua_all", "red", attrs=['bold']))
+          sys.exit()
+        config_clients, config_resources, config_uas = parse_config_file(args.config) if args.config else ({}, {}, {})
+
         try:
           do_test_auth(args.u, password, proxies)
           print("[+] Test authentication successful!")
@@ -804,8 +857,8 @@ def main():
           sys.exit()
 
         try:
-          results = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c)
-          if not args.ua_all:
+          results, total = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None)
+          if total < 50:
             print_table(results)
           write_results(args.u, results)
 
