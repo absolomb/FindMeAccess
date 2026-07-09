@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name="findmeaccess",
-    version="3.1",
+    version="3.1.1",
     install_requires=[ "tabulate", "termcolor", "requests", "lxml" ],
     entry_points={ "console_scripts": [ "findmeaccess=findmeaccess:main" ] }
 )

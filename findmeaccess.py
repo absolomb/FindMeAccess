@@ -327,7 +327,16 @@ def authenticate(username, password, resource, client_id, user_agent, proxy, get
         elif "AADSTS53004" in response.text:
             message_string = colored("Suspicious activity","yellow", attrs=['bold'])
             print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
+        
+        # Disabled
+        elif "AADSTS500014" in response.text:
+            message_string = colored("The service principal for the resource is disabled","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
 
+        elif "AADSTS50001" in response.text:
+            message_string = colored("The resource is disabled or doesn't exist","yellow", attrs=['bold'])
+            print(f"[-] {resource[0]} - {client_id[0]} - {message_string} ")
+        
         # Empty password
         elif "AADSTS900144" in response.text:
            raise ValueError(colored(f"[!] No password provided for {username}","red", attrs=['bold']))
@@ -775,7 +784,7 @@ def add_shared_arguments(parser):
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
 def main():
-    banner = "\nFindMeAccess v3.1\n"
+    banner = "\nFindMeAccess v3.1.1\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
