@@ -49,6 +49,10 @@ options:
   --config config_file  File containing clients, resources, and user agents
   --tenant tenant_domain
                         Tenant domain to resolve and use for authentication
+  --delay DELAY         Minimum spacing in seconds between audit request starts
+                        (Default: 0)
+  --jitter JITTER       Random additional spacing from 0 to this many seconds
+                        (Default: 0)
 ```
 
 For an initial run you just need to provide a username and password. The tool will first try all combinations of resources, client ids, but will only try using one user agent (Windows 10 Chrome). 
@@ -57,6 +61,15 @@ You can choose to pass the password via command line with `-p` or just provide t
 
 ```
 python findmeaccess.py audit -u username@domain.com
+```
+
+To throttle an audit, use `--delay` for the minimum spacing between request
+starts and `--jitter` for a uniformly random amount added to each interval. For
+example, the following starts requests 1.5 to 2.0 seconds apart, even when
+multiple worker threads are enabled:
+
+```
+python findmeaccess.py audit -u username@domain.com --delay 1.5 --jitter 0.5
 ```
 
 To authenticate against a specific tenant, pass its domain name. FindMeAccess resolves the domain to a tenant ID before starting the audit. If this option is omitted, authentication continues to use the original `common` endpoint.

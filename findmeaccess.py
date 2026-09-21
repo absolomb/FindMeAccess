@@ -5,6 +5,8 @@ import urllib3
 import concurrent.futures
 import time
 import random
+import math
+import threading
 from termcolor import colored
 import json
 from tabulate import tabulate
@@ -624,12 +626,38 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
         
         return
 
+class RequestThrottle:
+    """Space request starts by a base delay plus independently sampled jitter."""
+
+    def __init__(self, delay=0.0, jitter=0.0, clock=time.monotonic,
+                 sleeper=time.sleep, random_uniform=random.uniform):
+        self.delay = delay
+        self.jitter = jitter
+        self._clock = clock
+        self._sleep = sleeper
+        self._random_uniform = random_uniform
+        self._lock = threading.Lock()
+        self._last_request_started = self._clock()
+
+    def wait(self):
+        if self.delay == 0 and self.jitter == 0:
+            return
+
+        # Keep the lock while waiting so concurrent workers reserve request-start
+        # times in sequence rather than sleeping in parallel and firing together.
+        with self._lock:
+            interval = self.delay + self._random_uniform(0.0, self.jitter)
+            target = self._last_request_started + interval
+            remaining = target - self._clock()
+            if remaining > 0:
+                self._sleep(remaining)
+            self._last_request_started = self._clock()
+
+
 # handle each combination of parameters
 def handle_combination(combination):
-    username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, delay, jitter = combination
-    sleep_time = max(0.0, delay) + random.uniform(0.0, max(0.0, jitter))
-    if sleep_time > 0:
-        time.sleep(sleep_time)
+    username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, throttle = combination
+    throttle.wait()
     return authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe, tenant_id=tenant_id)
 
 # helper to resolve a single entry against a dict, returning (display_name, value) tuple
@@ -718,8 +746,10 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
   else:
       user_agents_to_use = None
 
+  throttle = RequestThrottle(delay, jitter)
+
   if user_agents_to_use is not None:
-      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, delay, jitter)
+      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, throttle)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()
                       for user_agent in user_agents_to_use.items()]
@@ -728,7 +758,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           single_ua = resolve_entry(custom_user_agent, user_agents, "user_agent")
       else:
           single_ua = ("Windows 10 Chrome", user_agents["Windows 10 Chrome"])
-      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe, tenant_id, delay, jitter)
+      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe, tenant_id, throttle)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()]
 
@@ -806,8 +836,14 @@ def add_shared_arguments(parser):
     parser.add_argument('-u', metavar="user", help="User to check", type=str)
     parser.add_argument('-p', metavar="password", help="Password for account", type=str) 
 
+def non_negative_float(value):
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed < 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than or equal to zero")
+    return parsed
+
 def main():
-    banner = "\nFindMeAccess v3.2\n"
+    banner = "\nFindMeAccess v3.3\n"
     print(banner)
 
     parser = argparse.ArgumentParser(description='')
@@ -821,8 +857,8 @@ def main():
     audit_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False) 
     audit_parser.add_argument('--config', metavar="config_file", help="File containing clients, resources, and user_agents", type=str)
     audit_parser.add_argument('--tenant', metavar="tenant_domain", help="Tenant domain to resolve and use for authentication", type=str)
-    audit_parser.add_argument('--delay', help="Base delay in seconds before each request (Default: 0)", type=float, default=0.0)
-    audit_parser.add_argument('--jitter', help="Additional random delay in seconds (Default: 0)", type=float, default=0.0)
+    audit_parser.add_argument('--delay', help="Minimum spacing in seconds between audit request starts (Default: 0)", type=non_negative_float, default=0.0)
+    audit_parser.add_argument('--jitter', help="Random additional spacing from 0 to this many seconds (Default: 0)", type=non_negative_float, default=0.0)
 
     token_parser = subparsers.add_parser("token", help="Used for getting tokens")
     add_shared_arguments(token_parser)
