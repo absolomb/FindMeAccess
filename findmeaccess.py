@@ -3,6 +3,8 @@ import sys
 import requests
 import urllib3
 import concurrent.futures
+import time
+import random
 from termcolor import colored
 import json
 from tabulate import tabulate
@@ -624,7 +626,10 @@ def get_azure_token_via_adfs(username, password, scope, custom_user_agent, clien
 
 # handle each combination of parameters
 def handle_combination(combination):
-    username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id = combination
+    username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, delay, jitter = combination
+    sleep_time = max(0.0, delay) + random.uniform(0.0, max(0.0, jitter))
+    if sleep_time > 0:
+        time.sleep(sleep_time)
     return authenticate(username, password, resource, client_id, user_agent, proxy, unsafe=unsafe, tenant_id=tenant_id)
 
 # helper to resolve a single entry against a dict, returning (display_name, value) tuple
@@ -663,7 +668,7 @@ def parse_config_file(filepath):
     return sections['clients'], sections['resources'], sections['user_agents']
 
 # mass check resources, client ids, and user agents
-def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None, unsafe=False, tenant_id=None):
+def check_resources(username, password, all_user_agents, threads, custom_user_agent, custom_resource, proxy, custom_client=None, config_clients=None, config_resources=None, config_uas=None, unsafe=False, tenant_id=None, delay=0.0, jitter=0.0):
   print("[*] Starting checks")
   results = []
   resources_to_check = {}
@@ -714,7 +719,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
       user_agents_to_use = None
 
   if user_agents_to_use is not None:
-      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id)
+      combinations = [(username, password, resource, client_id, user_agent, proxy, unsafe, tenant_id, delay, jitter)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()
                       for user_agent in user_agents_to_use.items()]
@@ -723,7 +728,7 @@ def check_resources(username, password, all_user_agents, threads, custom_user_ag
           single_ua = resolve_entry(custom_user_agent, user_agents, "user_agent")
       else:
           single_ua = ("Windows 10 Chrome", user_agents["Windows 10 Chrome"])
-      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe, tenant_id)
+      combinations = [(username, password, resource, client_id, single_ua, proxy, unsafe, tenant_id, delay, jitter)
                       for resource in resources_to_check.items()
                       for client_id in client_ids_to_use.items()]
 
@@ -816,6 +821,8 @@ def main():
     audit_parser.add_argument('--ua_all', help="Check all users agents (Default: False)", action='store_true', default=False) 
     audit_parser.add_argument('--config', metavar="config_file", help="File containing clients, resources, and user_agents", type=str)
     audit_parser.add_argument('--tenant', metavar="tenant_domain", help="Tenant domain to resolve and use for authentication", type=str)
+    audit_parser.add_argument('--delay', help="Base delay in seconds before each request (Default: 0)", type=float, default=0.0)
+    audit_parser.add_argument('--jitter', help="Additional random delay in seconds (Default: 0)", type=float, default=0.0)
 
     token_parser = subparsers.add_parser("token", help="Used for getting tokens")
     add_shared_arguments(token_parser)
@@ -891,7 +898,7 @@ def main():
           sys.exit()
 
         try:
-          results, _ = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None, args.unsafe, tenant_id)
+          results, _ = check_resources(args.u, password, args.ua_all, args.threads, args.user_agent, args.r, proxies, args.c, config_clients or None, config_resources or None, config_uas or None, args.unsafe, tenant_id, args.delay, args.jitter)
           print_table(results)
           write_results(args.u, results)
 
